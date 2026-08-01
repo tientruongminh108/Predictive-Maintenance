@@ -1,0 +1,29 @@
+# Python Virtual Environments
+.venv/
+venv/
+ENV/
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Trained Models & Weights
+models/*.joblib
+models/*.pkl
+models/*.pth
+models/*.h5
+models/*.onnx
+
+# Jupyter Notebook Cache & Logs
+.ipynb_checkpoints
+catboost_info/
+
+# Environment variables / API Keys
+.env
+*.env
+
+# IDE & Editor files
+.vscode/
+.idea/
+.DS_Store
