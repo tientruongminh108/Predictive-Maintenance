@@ -1,80 +1,77 @@
-# Predictive Maintenance Analysis
+# Predictive Maintenance: Explainable Failure-Probability Regression
 
-This project implements a predictive maintenance analysis workflow on sensor and operational data collected from 10 industrial machines.
+A single-notebook analysis of sensor and operational data from 10 industrial machines. The notebook predicts `Failure_Prob` (0–1) from three physical sensors and, more importantly, **explains the model**: what it learned, whether the relationship is really linear, where its remaining error comes from, and what changes in the sensors would lower predicted risk.
 
-The solution covers two modeling tasks:
-* **Regression:** Predict physical `Failure_Prob` (0–1) from real-time sensor metrics.
-* **Classification:** Predict `Maintenance_Priority` (High / Medium / Low) to support Multi-Criteria Decision-Making (MCDM).
+The notebook is `predictive_maintenance.ipynb`. It runs top to bottom in about 15 seconds.
 
-## Contents
-Notebook	| Purpose |
---- | --- |
-`01_eda_preprocessing.ipynb` | Data integrity checks, univariate/bivariate analysis, outlier handling, feature engineering (`Severity_Index`, `Resource_Risk`), correlation analysis. Outputs `processed_dataset.csv`. |
-`02_regression_model.ipynb`	| Compares Linear Regression, Random Forest, Gradient Boosting under one consistent, machine-grouped CV methodology; selects and tunes the winner. |
-`03_classification_model.ipynb` | Evaluates a two-stage pipeline (auxiliary regression $\rightarrow$ classification); compares Logistic Regression, Random Forest, and CatBoost; tunes hyperparameters with Optuna; includes SHAP-based error analysis. |
+## Scope
+
+- **Regression only.** `Maintenance_Priority` is not modeled. It is reproduced exactly (100% of rows) by two thresholds: `Downtime_Cost_USD > 4000 → 1`, else `Failure_Prob ≤ 0.40 → 3`, else `2`. A classifier would only learn that rule.
+- **Inputs are the sensors** `Temp_C`, `Vibration_mm_s`, `Acoustic_dB`. Operational variables are used only as diagnostics.
+
+## What the notebook covers
+
+| Section | Content |
+| --- | --- |
+| 2–3 | Data integrity, EDA, outlier screening, why `Maintenance_Priority` is not a target |
+| 4 | Train/test split and feature selection (statistical, redundancy and causal-plausibility screening, on the training split only) |
+| 5 | Model selection: Linear, Ridge, Random Forest, Gradient Boosting with machine-grouped cross-validation |
+| 6 | Held-out evaluation and a leave-one-machine-out check on unseen machines |
+| 7.1 | Coefficients in physical units with robust confidence intervals |
+| 7.2 | Global importance through three lenses: drop-one ΔR², permutation importance, mean abs SHAP |
+| 7.3 | Cross-check against a black-box model: SHAP agreement, partial dependence, SHAP interactions |
+| 7.4 | Residual analysis: what the sensors cannot explain, and why |
+| 7.5 | Local explanations for individual readings and per-machine risk profiles |
+| 7.6 | What-if analysis: sensor changes needed to reach a target risk, with feasibility limits |
+| 7.7 | Influence diagnostics (Cook's distance, effect of the clipped values) |
+| 8 | Conclusions and limitations |
 
 ## Results
 
-- **Regression** - Linear Regression achieved **Test $R^2$ = 0.920** using only three physical sensor features (`Temp_C`, `Vibration_mm_s`, `Acoustic_dB`). Features lacking a physical connection to machine failure (`Technician_Availability_pct`, `Downtime_Cost_USD`, `Inspection_Duration_min`) were excluded despite raising $R^2$ to 0.997, as their predictive power stemmed from target generation artifacts rather than genuine physical signals.
+- **Accuracy.** Linear regression on three sensors: **test R² = 0.920** (RMSE 0.0152). Predicting each machine from the other nine gives R² 0.92–0.94 per machine.
+- **Drivers.** Vibration (+0.041 per mm/s) > temperature (+0.0030 per °C) > acoustic level (+0.0020 per dB). The ranking is identical under all three importance lenses, with roughly a 55% / 30% / 15% split of explained variance.
+- **Additive and linear.** Gradient Boosting on the same sensors yields SHAP attributions that correlate at r ≈ 0.99 with the linear model's, straight partial-dependence curves and a lower test R² (0.904). Interaction or quadratic terms add nothing to the linear model. The temperature × vibration "interaction" suggested by `Severity_Index` is just two strong sensors bundled together.
+- **Where the remaining 7% goes.** Out-of-fold residuals correlate at r = −0.98 with `Technician_Availability_pct`; adding that one variable lifts R² from 0.932 to 0.997 (RMSE within 0.0003 of the rounding floor). It is kept out of the model by design, and leaving it out does not bias the sensor coefficients (they move by less than 3%).
+- **Fleet.** The 10 machines are statistically alike; per-machine sensor contributions are within sampling noise, so no machine-specific rules are warranted.
 
-- **Classification:** CatBoost achieved **Test Macro F1 = 0.958** (Priority 1: 1.000, Priority 2: 0.990, Priority 3: 0.882). To prevent data leakage and simulate true inference conditions, the model uses out-of-fold predictions from the auxiliary regression stage instead of historical ground-truth `Failure_Prob`.
+## Limitations
 
-## Key Insights
+- The data show the hallmarks of **synthetic data** (an exactly additive target, a deterministic priority label), so the explanations describe this dataset and not real machine physics.
+- Explanations and what-if analyses are **associational, not causal**.
+- Ten machines, no timestamps: no assessment of drift or time-to-failure.
 
-* **Rule-Driven Critical Priorities:** Priority 1 (urgent) decisions are dominated by `Downtime_Cost_USD` crossing a ~$4,000 threshold. This suggests Priority 1 is partially rule-derived in the underlying data generation process and should be verified with domain experts before operational rollout.
-* **True Signal in Operational Triage:** The distinction between Priority 2 and Priority 3 reflects genuine physical sensor patterns rather than operational cost shortcuts. Evaluated in isolation, the model maintains strong discriminatory power (Macro F1 $\approx$ 0.93).
-* **Linearity of Physical Failure:** Machine failure probability behaves close to a linear function of physical sensor readings, dominated by a temperature $\times$ vibration interaction. Simple linear models match or outperform complex tree ensembles on this task.
-* **Causally Sound Modeling:** Non-physical operational features improve raw statistical metrics but lack causal validity for predicting mechanical breakdown. Feature selection across all tasks strictly prioritized causal justification over metric-chasing.
+See Section 8 of the notebook for details.
 
-## Repo Structure
+## Repository structure
 
 ```text
-predictive_maintenance/
-│
-├── data/
-│   ├── raw/             
-│   └── processed/    
-│
-├── models/                 
-│
-├── notebooks/
-│   ├── 01_eda_preprocessing.ipynb
-│   ├── 02_regression_model.ipynb
-│   └── 03_classification_model.ipynb     
-│
-├── src/                 
-│   └── utils.py  
-│
-├── .gitignore            
-├── requirements.txt  
-└── README.md        
+predictive-maintenance/
+├── predictive_maintenance.ipynb
+├── smart_maintenance_dataset.csv
+├── requirements.txt
+└── README.md
 ```
-## How to Run
 
-Ensure you have **Python 3.8+** installed. Clone the repository and install the required dependencies:
+## How to run
+
+Python 3.11+ is recommended.
 
 ```bash
-# Clone the repo
 git clone https://github.com/tientruongminh108/predictive-maintenance.git
 cd predictive-maintenance
 
-# Create and activate a virtual environment (optional)
 python -m venv .venv
-.venv\Scripts\activate  # On MacOS / Linux: source .venv/bin/activate
-
-# Install dependencies
+# Windows: .venv\Scripts\activate    macOS / Linux: source .venv/bin/activate
 pip install -r requirements.txt
+
+jupyter lab predictive_maintenance.ipynb
 ```
 
-## Execution Workflow
-Run the Jupyter notebooks in sequential order:
-1. `notebooks/01_eda_preprocessing.ipynb` - clean raw data and construct engineered features.
-2. `notebooks/02_regression_model.ipynb` - train the baseline physical regression model.
-3. `notebooks/03_classification_model.ipynb` - run the auxiliary two-stage classification stage.
+To execute it headlessly: `jupyter nbconvert --to notebook --execute --inplace predictive_maintenance.ipynb`.
 
-**Note**: Pipeline utilities in `src/utils.py` handle cross-notebook predictions and ensure out-of-fold alignment across independent data splits.
+Keep `smart_maintenance_dataset.csv` next to the notebook (repository root) and run the notebook from there.
 
-## Data & License
+## Data and license
 
-* **Dataset:** [Smart Manufacturing Maintenance Dataset - Kaggle](https://www.kaggle.com/datasets/ziya07/smart-manufacturing-maintenance-dataset)
-* **License:** CC0 (Public Domain)
+- **Dataset:** [Smart Manufacturing Maintenance Dataset (Kaggle)](https://www.kaggle.com/datasets/ziya07/smart-manufacturing-maintenance-dataset)
+- **License:** CC0 (Public Domain)
